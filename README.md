@@ -114,9 +114,9 @@ ELSE
 ---
 
 ## Architecture Screenshot 
-```md
+
 ![FlowSentinel Architecture](./screenshots/flowsentinel-architecture.png)
-```
+
 
 ---
 
@@ -220,9 +220,9 @@ Creates structured contextual summaries optimized for downstream AI reasoning.
 ---
 
 ## Incident Spec Generation Screenshot
-```md
+
 ![Incident Spec Generation](./screenshots/incident-spec-generation.png)
-```
+
 
 ---
 
@@ -303,9 +303,8 @@ The deterministic layer also applies:
 
 ## Deterministic Engine Screenshot
 
-```md
 ![Deterministic Engine](./screenshots/deterministic-engine.png)
-```
+
 
 ---
 
@@ -331,9 +330,8 @@ rather than the primary reliability engine.
 
 ## AI Classification Screenshot 
 
-```md
 ![AI Classification](./screenshots/ai-classification.png)
-```
+
 
 ---
 
@@ -369,9 +367,9 @@ Targets include:
 ---
 
 ## Email Notification Screenshot 
-```md
+
 ![Incident Notification](./screenshots/incident-notification.png)
-```
+
 
 ---
 
@@ -548,9 +546,8 @@ Purpose:
 
 ## Subject
 
-```text
+
 [FlowSentinel][HIGH] authentication_error in HubSpot Lead Sync
-```
 
 ## Body
 
@@ -629,42 +626,35 @@ Adaptive retry policies based on:
 
 ## Workflow Architecture
 
-```md
 ![Workflow Architecture](./screenshots/workflow-architecture.png)
-```
+
 
 ---
 
 ## Flowchart
 
-```md
 ![Flowchart](./screenshots/flowchart.png)
-```
 
 ---
 
 ## Deterministic Checks
 
-```md
 ![Deterministic Checks](./screenshots/deterministic-checks.png)
-```
+
 
 ---
 
 ## AI Classification
 
-```md
 ![AI Classification](./screenshots/ai-classification.png)
-```
+
 
 ---
 
 ## Incident Email
 
-```md
 ![Incident Email](./screenshots/incident-email.png)
 ![Incident Email 2](./screenshots/incident-email2.png)
-```
 
 ---
 
