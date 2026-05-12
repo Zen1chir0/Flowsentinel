@@ -1,0 +1,795 @@
+{
+  "name": "Reliability Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "eac06cfa-8ba0-4498-b77a-b52cabde3854",
+        "authentication": "basicAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "6e535e8d-eaa1-46c0-8600-aaf5e21b504b",
+      "name": "Webhook",
+      "webhookId": "eac06cfa-8ba0-4498-b77a-b52cabde3854",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "WBzhB8o4q1D0O7UV",
+          "name": "try"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require(\"crypto\");\n\nreturn items.map(item => {\n  const raw = item.json;\n\n  const workflowName = raw.workflow_name ?? \"unknown_workflow\";\n  const workflowId = raw.workflow_id ?? \"unknown_workflow_id\";\n  const executionId = raw.execution_id ?? \"unknown_execution\";\n  const nodeName = raw.node_name ?? \"unknown_node\";\n  const nodeType = raw.node_type ?? \"unknown_node_type\";\n\n  const workflowOwnerEmail = raw.workflow_owner_email ?? null;\n  const mainDevEmail = raw.main_dev_email ?? null;\n  const environment = raw.environment ?? \"unknown\";\n\n  const statusCode = raw.status_code ? Number(raw.status_code) : null;\n  const errorType = raw.error_type ?? \"UnknownError\";\n  const errorMessage = raw.error_message ?? \"\";\n  const errorDescription = raw.error_description ?? \"\";\n  const method = raw.method ?? null;\n  const endpoint = raw.endpoint || null;\n\n  const incidentFingerprintBase = [\n    workflowId,\n    nodeName,\n    errorType,\n    statusCode,\n    method,\n    endpoint,\n    errorMessage\n  ].join(\"|\");\n\n  const incidentKey = crypto\n    .createHash(\"sha256\")\n    .update(incidentFingerprintBase)\n    .digest(\"hex\");\n\n  let failureCategory = \"unknown\";\n  let likelyRetryable = false;\n\n  if ([401, 403].includes(statusCode)) {\n    failureCategory = \"auth_error\";\n    likelyRetryable = false;\n  } else if (statusCode === 404) {\n    failureCategory = \"not_found\";\n    likelyRetryable = false;\n  } else if (statusCode === 429) {\n    failureCategory = \"rate_limit\";\n    likelyRetryable = true;\n  } else if (statusCode >= 500) {\n    failureCategory = \"server_error\";\n    likelyRetryable = true;\n  } else if (String(errorMessage).toLowerCase().includes(\"timeout\")) {\n    failureCategory = \"timeout\";\n    likelyRetryable = true;\n  } else if (errorType === \"NodeApiError\") {\n    failureCategory = \"api_error\";\n    likelyRetryable = false;\n  }\n\n  return {\n    json: {\n      raw_incident_id: raw.id,\n      incident_key: incidentKey,\n\n      source: raw.source,\n\n      ownership: {\n        workflow_owner_email: workflowOwnerEmail,\n        main_dev_email: mainDevEmail\n      },\n\n      environment,\n\n      workflow: {\n        name: workflowName,\n        id: workflowId\n      },\n\n      execution: {\n        id: executionId,\n        url: raw.execution_url,\n        status: raw.status\n      },\n\n      failed_node: {\n        name: nodeName,\n        type: nodeType\n      },\n\n      error: {\n        type: errorType,\n        message: errorMessage,\n        description: errorDescription,\n        status_code: statusCode,\n        endpoint,\n        method\n      },\n\n      initial_specs: {\n        failure_category: failureCategory,\n        likely_retryable: likelyRetryable,\n        environment,\n        detected_at: new Date().toISOString()\n      },\n\n      ai_input: {\n        summary_context: `\nWorkflow \"${workflowName}\" failed at node \"${nodeName}\".\nEnvironment: ${environment}\nWorkflow owner email: ${workflowOwnerEmail}\nMain dev email: ${mainDevEmail}\nError type: ${errorType}\nStatus code: ${statusCode}\nMethod: ${method}\nEndpoint: ${endpoint}\nMessage: ${errorMessage}\nDescription: ${errorDescription}\n        `.trim()\n      }\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        0
+      ],
+      "id": "fd7b2236-a5de-45fe-8fbd-7576102f2e28",
+      "name": "Generate Incident Specs"
+    },
+    {
+      "parameters": {
+        "tableId": "flowsentinel_raw_incidents",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "source",
+              "fieldValue": "={{ $json.body.source }}"
+            },
+            {
+              "fieldId": "workflow_name",
+              "fieldValue": "={{ $json.body.workflow_name }}"
+            },
+            {
+              "fieldId": "workflow_id",
+              "fieldValue": "={{ $json.body.workflow_id }}"
+            },
+            {
+              "fieldId": "execution_id",
+              "fieldValue": "={{ $json.body.execution_id }}"
+            },
+            {
+              "fieldId": "execution_url",
+              "fieldValue": "={{ $json.body.execution_url }}"
+            },
+            {
+              "fieldId": "node_name",
+              "fieldValue": "={{ $json.body.node_name }}"
+            },
+            {
+              "fieldId": "node_type",
+              "fieldValue": "={{ $json.body.node_type }}"
+            },
+            {
+              "fieldId": "error_message",
+              "fieldValue": "={{ $json.body.error_message }}"
+            },
+            {
+              "fieldId": "error_description",
+              "fieldValue": "={{ $json.body.error_description }}"
+            },
+            {
+              "fieldId": "status_code",
+              "fieldValue": "={{ $json.body.status_code }}"
+            },
+            {
+              "fieldId": "error_type",
+              "fieldValue": "={{ $json.body.error_type }}"
+            },
+            {
+              "fieldId": "endpoint",
+              "fieldValue": "={{ $json.body.endpoint }}"
+            },
+            {
+              "fieldId": "method",
+              "fieldValue": "={{ $json.body.method }}"
+            },
+            {
+              "fieldId": "workflow_timestamp_ms",
+              "fieldValue": "={{ $json.body.timestamp }}"
+            },
+            {
+              "fieldId": "workflow_owner_email",
+              "fieldValue": "={{ $json.body.workflow_owner_email }}"
+            },
+            {
+              "fieldId": "main_dev_email",
+              "fieldValue": "={{ $json.body.main_dev_email }}"
+            },
+            {
+              "fieldId": "environment",
+              "fieldValue": "={{ $json.body.environment }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        224,
+        0
+      ],
+      "id": "02cd2df3-0fe0-4293-8861-57214da60b40",
+      "name": "Save raw payload",
+      "credentials": {
+        "supabaseApi": {
+          "id": "mOlfzFw5DzW4gfJE",
+          "name": "Reliability Engine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b63f2d06-f440-4632-ae15-3f1ce9d9a885",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "object",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        688,
+        0
+      ],
+      "id": "710e27aa-9af9-41bb-8c70-d489ec4ad1b3",
+      "name": "Failed run?"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const incident = item.json;\n\n  const statusCode = incident.error?.status_code ?? null;\n  const errorType = incident.error?.type ?? \"\";\n  const message = String(incident.error?.message ?? \"\").toLowerCase();\n  const description = String(incident.error?.description ?? \"\").toLowerCase();\n  const nodeType = incident.failed_node?.type ?? \"\";\n  const nodeName = incident.failed_node?.name ?? \"\";\n\n  const text = `${message} ${description}`.toLowerCase();\n\n  let classificationStatus = \"deterministic_classified\";\n  let failureCategory = incident.initial_specs?.failure_category ?? \"unknown\";\n  let severity = \"low\";\n  let retryable = false;\n  let escalate = false;\n  let escalationTarget = \"none\";\n  let action = \"Log incident only.\";\n  let reason = \"Failure was classified by deterministic rules.\";\n  let confidence = 0.75;\n  const tags = [];\n\n  if (statusCode === 400) {\n    failureCategory = \"bad_request\";\n    severity = \"medium\";\n    retryable = false;\n    escalate = true;\n    escalationTarget = \"workflow_owner\";\n    action = \"Check request body, query parameters, and required fields.\";\n    reason = \"400 means the request payload or parameters are invalid.\";\n    confidence = 0.95;\n    tags.push(\"api\", \"client_error\", \"payload_validation\");\n  } else if (statusCode === 401) {\n    failureCategory = \"authentication_error\";\n    severity = \"high\";\n    retryable = false;\n    escalate = true;\n    escalationTarget = \"main_devs\";\n    action = \"Check expired credentials, API keys, OAuth token, or credential sharing.\";\n    reason = \"401 indicates the request is unauthenticated.\";\n    confidence = 0.98;\n    tags.push(\"api\", \"auth\", \"credentials\");\n  } else if (statusCode === 403) {\n    failureCategory = \"authorization_error\";\n    severity = \"high\";\n    retryable = false;\n    escalate = true;\n    escalationTarget = \"main_devs\";\n    action = \"Check scopes, permissions, role access, and API app authorization.\";\n    reason = \"403 means the workflow authenticated but lacks permission.\";\n    confidence = 0.98;\n    tags.push(\"api\", \"auth\", \"permissions\");\n  } else if (statusCode === 404) {\n    failureCategory = \"not_found\";\n    severity = \"medium\";\n    retryable = false;\n    escalate = true;\n    escalationTarget = \"workflow_owner\";\n    action = \"Verify endpoint URL, resource ID, route path, and API documentation.\";\n    reason = \"404 usually means the endpoint or requested resource does not exist.\";\n    confidence = 0.96;\n    tags.push(\"api\", \"client_error\", \"not_found\");\n  } else if (statusCode === 408 || text.includes(\"timeout\") || text.includes(\"timed out\")) {\n    failureCategory = \"timeout\";\n    severity = \"medium\";\n    retryable = true;\n    escalate = false;\n    escalationTarget = \"none\";\n    action = \"Retry with backoff. Escalate only if repeated.\";\n    reason = \"Timeouts are often transient and should not escalate on first occurrence.\";\n    confidence = 0.9;\n    tags.push(\"network\", \"timeout\", \"retryable\");\n  } else if (statusCode === 409) {\n    failureCategory = \"conflict\";\n    severity = \"medium\";\n    retryable = false;\n    escalate = true;\n    escalationTarget = \"workflow_owner\";\n    action = \"Check duplicate writes, idempotency keys, and race-condition-sensitive operations.\";\n    reason = \"409 usually means conflicting state or duplicate operation.\";\n    confidence = 0.9;\n    tags.push(\"api\", \"conflict\", \"idempotency\");\n  } else if (statusCode === 422) {\n    failureCategory = \"validation_error\";\n    severity = \"medium\";\n    retryable = false;\n    escalate = true;\n    escalationTarget = \"workflow_owner\";\n    action = \"Inspect field formats, missing required values, enum constraints, and schema validation.\";\n    reason = \"422 indicates the request was understood but failed validation.\";\n    confidence = 0.95;\n    tags.push(\"api\", \"validation\", \"payload\");\n  } else if (statusCode === 429) {\n    failureCategory = \"rate_limit\";\n    severity = \"medium\";\n    retryable = true;\n    escalate = false;\n    escalationTarget = \"none\";\n    action = \"Retry using exponential backoff and reduce request frequency.\";\n    reason = \"429 indicates rate limiting and is usually retryable.\";\n    confidence = 0.98;\n    tags.push(\"api\", \"rate_limit\", \"retryable\");\n  } else if (statusCode >= 500 && statusCode <= 599) {\n    failureCategory = \"external_server_error\";\n    severity = statusCode === 503 || statusCode === 504 ? \"medium\" : \"high\";\n    retryable = true;\n    escalate = false;\n    escalationTarget = \"none\";\n    action = \"Retry with backoff. Escalate if the same incident repeats or persists.\";\n    reason = \"5xx errors are usually external service or infrastructure failures.\";\n    confidence = 0.92;\n    tags.push(\"api\", \"server_error\", \"retryable\");\n  } else if (\n    text.includes(\"invalid json\") ||\n    text.includes(\"unexpected token\") ||\n    text.includes(\"not valid json\") ||\n    text.includes(\"json parse\")\n  ) {\n    failureCategory = \"invalid_json\";\n    severity = \"medium\";\n    retryable = false;\n    escalate = true;\n    escalationTarget = \"workflow_owner\";\n    action = \"Check JSON body formatting, expression output, and escaped characters.\";\n    reason = \"JSON parsing failures usually require workflow configuration changes.\";\n    confidence = 0.93;\n    tags.push(\"payload\", \"json\", \"configuration\");\n  } else if (\n    text.includes(\"cannot read properties\") ||\n    text.includes(\"undefined\") ||\n    text.includes(\"null\") ||\n    text.includes(\"is not iterable\")\n  ) {\n    failureCategory = \"data_shape_error\";\n    severity = \"medium\";\n    retryable = false;\n    escalate = true;\n    escalationTarget = \"workflow_owner\";\n    action = \"Check missing fields, null values, input item structure, and previous node output.\";\n    reason = \"The workflow expected a data shape that was not present.\";\n    confidence = 0.88;\n    tags.push(\"data_shape\", \"code_node\", \"mapping\");\n  } else if (\n    text.includes(\"credential\") ||\n    text.includes(\"oauth\") ||\n    text.includes(\"token\") ||\n    text.includes(\"api key\")\n  ) {\n    failureCategory = \"credential_or_oauth_error\";\n    severity = \"high\";\n    retryable = false;\n    escalate = true;\n    escalationTarget = \"main_devs\";\n    action = \"Check credential validity, token refresh, OAuth scopes, and credential ownership.\";\n    reason = \"Credential and OAuth failures usually need developer or admin intervention.\";\n    confidence = 0.9;\n    tags.push(\"auth\", \"oauth\", \"credentials\");\n  } else if (\n    text.includes(\"connection refused\") ||\n    text.includes(\"econnrefused\") ||\n    text.includes(\"enotfound\") ||\n    text.includes(\"dns\") ||\n    text.includes(\"network\")\n  ) {\n    failureCategory = \"network_error\";\n    severity = \"medium\";\n    retryable = true;\n    escalate = false;\n    escalationTarget = \"none\";\n    action = \"Retry with backoff. Escalate if repeated.\";\n    reason = \"Network failures are commonly transient.\";\n    confidence = 0.86;\n    tags.push(\"network\", \"retryable\");\n  } else if (\n    nodeType.includes(\"code\") ||\n    nodeName.toLowerCase().includes(\"code\")\n  ) {\n    failureCategory = \"code_node_error\";\n    severity = \"medium\";\n    retryable = false;\n    escalate = true;\n    escalationTarget = \"workflow_owner\";\n    action = \"Inspect code node logic, input assumptions, and returned item structure.\";\n    reason = \"Code node failures are usually logic or data-shape issues.\";\n    confidence = 0.82;\n    tags.push(\"code_node\", \"logic_error\");\n  } else {\n    classificationStatus = \"needs_ai_analysis\";\n    failureCategory = \"unknown\";\n    severity = \"unknown\";\n    retryable = null;\n    escalate = null;\n    escalationTarget = \"ai_required\";\n    action = \"Send incident to AI classifier for deeper analysis.\";\n    reason = \"No deterministic rule confidently matched this failure.\";\n    confidence = 0.25;\n    tags.push(\"unknown\", \"needs_ai\");\n  }\n\n  const environment = incident.initial_specs?.environment ?? incident.environment ?? \"test\";\n\n  const criticalPatterns = [\n    \"database\",\n    \"supabase\",\n    \"payment\",\n    \"production\",\n    \"delete\",\n    \"unauthorized\",\n    \"forbidden\",\n    \"security\"\n  ];\n\n  const hasCriticalPattern = criticalPatterns.some(pattern => text.includes(pattern));\n\n  if (hasCriticalPattern && classificationStatus === \"deterministic_classified\") {\n    severity = severity === \"low\" ? \"high\" : severity;\n    escalate = true;\n    escalationTarget = \"main_devs\";\n    tags.push(\"critical_pattern\");\n  }\n\n  if (environment === \"test\" && severity !== \"critical\") {\n    const allowedMainDevCategories = [\n      \"authentication_error\",\n      \"authorization_error\",\n      \"credential_or_oauth_error\"\n    ];\n\n    if (!allowedMainDevCategories.includes(failureCategory) && !hasCriticalPattern) {\n      escalationTarget = escalate ? \"workflow_owner\" : \"none\";\n    }\n  }\n\n  const workflowOwnerEmail = incident.ownership?.workflow_owner_email ?? null;\n  const mainDevEmail = incident.ownership?.main_dev_email ?? null;\n\n  let notificationTarget = null;\n\n  if (escalationTarget === \"main_devs\") {\n    notificationTarget = mainDevEmail;\n  } else if (escalationTarget === \"workflow_owner\") {\n    notificationTarget = workflowOwnerEmail;\n  }\n\n  const requiresEmailNotification = Boolean(escalate) && Boolean(notificationTarget);\n\n  let nextStep = \"save_classification_only\";\n\n  if (classificationStatus === \"needs_ai_analysis\") {\n    nextStep = \"send_to_ai_classifier\";\n  } else if (escalate) {\n    nextStep = \"save_classification_then_notify\";\n  }\n\n  let notificationPath = \"no_notification\";\n\n  if (escalate && escalationTarget === \"main_devs\") {\n    notificationPath = \"notify_main_devs\";\n  } else if (escalate && escalationTarget === \"workflow_owner\") {\n    notificationPath = \"notify_workflow_owner\";\n  }\n\n  return {\n    json: {\n      ...incident,\n\n      ownership: {\n        workflow_owner_email: workflowOwnerEmail,\n        main_dev_email: mainDevEmail\n      },\n\n      environment,\n\n      deterministic_result: {\n        classification_status: classificationStatus,\n        failure_category: failureCategory,\n        severity,\n        retryable,\n        escalate,\n        escalation_target: escalationTarget,\n        recommended_action: action,\n        reason,\n        confidence,\n        tags,\n        checked_at: new Date().toISOString(),\n        notification_target: notificationTarget,\n        requires_email_notification: requiresEmailNotification\n      },\n\n      routing: {\n        next_step: nextStep,\n        notification_path: notificationPath\n      }\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        -16
+      ],
+      "id": "40773a2b-7950-424c-ac7e-e593443728ba",
+      "name": "Deterministic checks"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "6b45d9d3-f4b0-4aac-a6e8-567e879801a7",
+              "leftValue": "={{ $json.deterministic_result.classification_status === \"needs_ai_analysis\" }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1216,
+        -16
+      ],
+      "id": "140f6e46-7436-4788-9ff5-46a52306a7c8",
+      "name": "Needs AI classification?"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are FlowSentinel AI Classifier, a reliability-analysis component for n8n automation workflow failures.\n\nYou are ONLY called when deterministic rules fail to classify an incident confidently.\n\nYour job is not to be creative.\nYour job is to produce a structured operational diagnosis that can be used for incident routing, escalation, retry decisions, and developer triage.\n\n====================\nPRIMARY OBJECTIVE\n====================\n\nAnalyze the provided workflow failure and return a strict JSON object that answers:\n\n1. What kind of failure is this?\n2. How severe is it?\n3. Is it safe or useful to retry?\n4. Should a human be notified?\n5. Who should handle it?\n6. What is the next best technical action?\n\nYou must reason from the incident data only.\nDo not invent missing services, users, credentials, endpoints, systems, or logs.\n\n====================\nIMPORTANT BEHAVIOR\n====================\n\nDeterministic logic already failed to classify this incident.\n\nThat means you must:\n- handle ambiguity carefully\n- use confidence scoring honestly\n- mark uncertain fields clearly\n- avoid over-escalating harmless failures\n- avoid suppressing potentially dangerous failures\n- prefer developer escalation for security, auth, database, payment, destructive actions, or production-impact issues\n\nNever output markdown.\nNever output explanations outside JSON.\nNever wrap JSON in code fences.\n\n====================\nINPUT CONTEXT\n====================\n\nIncident:\n{{ JSON.stringify($json, null, 2) }}\n\n====================\nCLASSIFICATION TAXONOMY\n====================\n\nChoose the most appropriate failure_category from this list:\n\n- authentication_error\n- authorization_error\n- credential_or_oauth_error\n- rate_limit\n- timeout\n- network_error\n- dns_error\n- external_api_error\n- external_server_error\n- bad_request\n- validation_error\n- invalid_json\n- data_shape_error\n- missing_required_field\n- mapping_error\n- expression_error\n- code_node_error\n- database_error\n- supabase_error\n- webhook_error\n- trigger_error\n- duplicate_or_idempotency_error\n- race_condition_risk\n- state_consistency_risk\n- ai_output_error\n- ai_parsing_error\n- permission_scope_error\n- configuration_error\n- unknown\n\nIf none fit, use \"unknown\".\n\n====================\nSEVERITY RULES\n====================\n\nUse exactly one:\n\nlow:\n- minor workflow issue\n- no customer/user/business impact\n- safe to log only\n\nmedium:\n- workflow failed and needs investigation\n- isolated failure\n- no obvious data/security risk\n\nhigh:\n- likely requires developer/admin attention\n- auth, permission, database, credential, webhook routing, or repeated operational failure\n- could block important workflow execution\n\ncritical:\n- production-impacting failure\n- security exposure\n- payment/billing issue\n- destructive operation risk\n- data corruption/loss risk\n- system-wide outage indicators\n\n====================\nRETRYABILITY RULES\n====================\n\nretryable = true only if retry is likely safe and useful:\n- transient timeout\n- temporary network issue\n- 429/rate limit\n- 5xx external service issue\n- temporary webhook delivery issue\n\nretryable = false if retry is likely useless or risky:\n- auth/permission error\n- bad credentials\n- invalid payload\n- bad mapping\n- schema validation failure\n- wrong endpoint/resource\n- code logic error\n- destructive operation uncertainty\n\nretryable = null if uncertain.\n\n====================\nESCALATION RULES\n====================\n\nescalate = true when:\n- severity is high or critical\n- auth/permission/credential issue\n- database or Supabase issue\n- destructive or state-changing operation may have partially completed\n- production workflow is impacted\n- issue likely requires code/configuration changes\n- confidence is low but operational risk is high\n\nescalate = false when:\n- failure is likely transient\n- issue is safe to retry\n- failure is isolated and low/medium risk\n- recommended action is automatic retry or log-only\n\nescalation_target must be exactly one of:\n- none\n- workflow_owner\n- main_devs\n\nUse workflow_owner for:\n- mapping/configuration/payload/code-node problems\n- wrong endpoint/resource\n- workflow-specific failure\n\nUse main_devs for:\n- auth/security/database/platform/system-wide issues\n- credential ownership issues\n- production-impacting failures\n- unknown but high-risk incidents\n\n====================\nOWNERSHIP AND NOTIFICATION ROUTING\n====================\n\nThe incident may include:\n\nownership.workflow_owner_email\nownership.main_dev_email\nenvironment\n\nUse these rules:\n\n- If escalation_target = workflow_owner, notification_target must be ownership.workflow_owner_email.\n- If escalation_target = main_devs, notification_target must be ownership.main_dev_email.\n- If escalate = false, notification_target must be null.\n- If the required email is missing but escalation is required, keep escalate = true and set notification_target = null.\n- In that case, include \"missing escalation email\" in missing_context.\n- Production incidents should be treated with higher caution than test incidents.\n- Test incidents should not be escalated unless auth/security/database/platform/critical-risk signals exist.\n\n====================\nCONFIDENCE RULES\n====================\n\nconfidence must be a number from 0 to 1.\n\nUse:\n- 0.90–1.00 for clear direct evidence\n- 0.70–0.89 for strong inference\n- 0.40–0.69 for partial evidence\n- 0.00–0.39 for weak/ambiguous evidence\n\nIf confidence < 0.60:\n- failure_category should usually be \"unknown\" or broad\n- recommended_action must include inspecting execution logs/raw payload\n- do not pretend certainty\n\n====================\nOUTPUT REQUIREMENTS\n====================\n\nReturn STRICT JSON only.\n\nThe JSON must match this exact schema:\n\n{\n  \"classification_status\": \"ai_classified\",\n  \"failure_category\": \"unknown\",\n  \"severity\": \"medium\",\n  \"retryable\": null,\n  \"escalate\": false,\n  \"escalation_target\": \"none\",\n  \"confidence\": 0.0,\n  \"risk_level\": \"low | medium | high | critical\",\n  \"human_summary\": \"One-sentence summary of what failed.\",\n  \"technical_reasoning\": \"Short explanation based only on provided evidence.\",\n  \"recommended_action\": \"Concrete next technical step.\",\n  \"safe_to_auto_retry\": false,\n  \"requires_human_review\": true,\n  \"possible_root_causes\": [\n    \"Possible cause 1\",\n    \"Possible cause 2\"\n  ],\n  \"signals_used\": [\n    \"Specific signal from incident data\"\n  ],\n  \"missing_context\": [\n    \"Important missing information\"\n  ],\n  \"tags\": [\n    \"tag1\",\n    \"tag2\"\n  ]\n}\n\n====================\nFINAL VALIDATION\n====================\n\nBefore returning, silently verify:\n- JSON is valid\n- no markdown was used\n- all required keys are present\n- severity uses only low, medium, high, critical\n- escalation_target uses only none, workflow_owner, main_devs\n- retryable is true, false, or null\n- confidence is between 0 and 1\n- no unsupported assumptions were invented\n\nReturn the JSON now.",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1536,
+        -256
+      ],
+      "id": "7eb2e8dc-26ca-4e31-b6fa-e643e6467044",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const data = item.json;\n\n  let baseIncident = data;\n  let classification = null;\n  let classificationSource = \"deterministic\";\n\n  if (data.deterministic_result) {\n    classification = data.deterministic_result;\n    classificationSource = \"deterministic\";\n  }\n\n  else if (data.output || data.text || data.response) {\n    classificationSource = \"ai\";\n\n    const rawAiOutput = data.output ?? data.text ?? data.response;\n\n    try {\n      classification =\n        typeof rawAiOutput === \"string\"\n          ? JSON.parse(rawAiOutput)\n          : rawAiOutput;\n    } catch (e) {\n      classification = {\n        classification_status: \"ai_parse_failed\",\n        failure_category: \"unknown\",\n        severity: \"medium\",\n        retryable: null,\n        escalate: true,\n        escalation_target: \"workflow_owner\",\n        confidence: 0.2,\n        risk_level: \"medium\",\n        human_summary: \"AI classifier returned invalid JSON.\",\n        technical_reasoning: \"The AI response could not be parsed as JSON.\",\n        recommended_action: \"Inspect AI Agent output and enforce strict JSON-only response.\",\n        safe_to_auto_retry: false,\n        requires_human_review: true,\n        possible_root_causes: [\"Invalid AI JSON output\"],\n        signals_used: [\"AI output parse failure\"],\n        missing_context: [],\n        tags: [\"ai_parse_failed\"]\n      };\n    }\n\n    baseIncident = data.incident ?? data.original_incident ?? data;\n  }\n\n  else {\n    classificationSource = \"unknown\";\n    classification = {\n      classification_status: \"unclassified\",\n      failure_category: \"unknown\",\n      severity: \"medium\",\n      retryable: null,\n      escalate: true,\n      escalation_target: \"workflow_owner\",\n      confidence: 0.1,\n      risk_level: \"medium\",\n      human_summary: \"FlowSentinel could not determine classification source.\",\n      technical_reasoning: \"Input did not contain deterministic_result or AI output.\",\n      recommended_action: \"Inspect workflow routing before the save-classification node.\",\n      safe_to_auto_retry: false,\n      requires_human_review: true,\n      possible_root_causes: [\"Unexpected workflow data shape\"],\n      signals_used: [\"Missing deterministic_result and AI output\"],\n      missing_context: [\"Original incident object may not have been passed forward\"],\n      tags: [\"routing_error\"]\n    };\n  }\n\n  const workflowOwnerEmail =\n    baseIncident.ownership?.workflow_owner_email ??\n    baseIncident.workflow_owner_email ??\n    null;\n\n  const mainDevEmail =\n    baseIncident.ownership?.main_dev_email ??\n    baseIncident.main_dev_email ??\n    null;\n\n  const environment =\n    baseIncident.environment ??\n    baseIncident.initial_specs?.environment ??\n    classification.environment ??\n    \"unknown\";\n\n  let notificationTarget =\n    classification.notification_target ?? null;\n\n  if (!notificationTarget && classification.escalate === true) {\n    if (classification.escalation_target === \"main_devs\") {\n      notificationTarget = mainDevEmail;\n    } else if (classification.escalation_target === \"workflow_owner\") {\n      notificationTarget = workflowOwnerEmail;\n    }\n  }\n\n  const requiresEmailNotification =\n    Boolean(classification.escalate) && Boolean(notificationTarget);\n\n  return {\n    json: {\n      raw_incident_id: baseIncident.raw_incident_id ?? null,\n      incident_key: baseIncident.incident_key ?? null,\n\n      source: baseIncident.source ?? null,\n\n      workflow_owner_email: workflowOwnerEmail,\n      main_dev_email: mainDevEmail,\n      environment,\n\n      workflow_name: baseIncident.workflow?.name ?? null,\n      workflow_id: baseIncident.workflow?.id ?? null,\n      execution_id: baseIncident.execution?.id ?? null,\n      execution_url: baseIncident.execution?.url ?? null,\n\n      node_name: baseIncident.failed_node?.name ?? null,\n      node_type: baseIncident.failed_node?.type ?? null,\n\n      error_type: baseIncident.error?.type ?? null,\n      error_message: baseIncident.error?.message ?? null,\n      error_description: baseIncident.error?.description ?? null,\n      status_code: baseIncident.error?.status_code ?? null,\n      endpoint: baseIncident.error?.endpoint ?? null,\n      method: baseIncident.error?.method ?? null,\n\n      classification_source: classificationSource,\n      classification_status: classification.classification_status ?? \"unknown\",\n      failure_category: classification.failure_category ?? \"unknown\",\n      severity: classification.severity ?? \"medium\",\n      risk_level: classification.risk_level ?? classification.severity ?? \"medium\",\n\n      retryable: classification.retryable ?? null,\n      safe_to_auto_retry: classification.safe_to_auto_retry ?? classification.retryable ?? false,\n      escalate: classification.escalate ?? false,\n      escalation_target: classification.escalation_target ?? \"none\",\n      requires_human_review:\n        classification.requires_human_review ?? Boolean(classification.escalate),\n\n      notification_target: notificationTarget,\n      requires_email_notification: requiresEmailNotification,\n\n      confidence: classification.confidence ?? 0,\n\n      human_summary:\n        classification.human_summary ??\n        `Workflow ${baseIncident.workflow?.name ?? \"unknown\"} failed at ${baseIncident.failed_node?.name ?? \"unknown node\"}.`,\n\n      technical_reasoning:\n        classification.technical_reasoning ??\n        classification.reason ??\n        \"Incident classified by FlowSentinel.\",\n\n      recommended_action:\n        classification.recommended_action ??\n        \"Inspect the failed execution and workflow configuration.\",\n\n      possible_root_causes: classification.possible_root_causes ?? [],\n      signals_used: classification.signals_used ?? [],\n      missing_context: classification.missing_context ?? [],\n      tags: classification.tags ?? [],\n\n      deterministic_result: data.deterministic_result ?? null,\n      ai_result: classificationSource === \"ai\" ? classification : null,\n      full_incident: baseIncident,\n\n      created_from_path: classificationSource,\n      save_status: \"ready_to_save\"\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2016,
+        0
+      ],
+      "id": "1ac9ce20-ab57-4a51-adc0-097bd65f62be",
+      "name": "Init classification to save in Supabase"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        1536,
+        -80
+      ],
+      "id": "baa7b07c-1fe1-4318-842b-c83c2fd150db",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "xumdekSUznWoXkNx",
+          "name": "n8n free OpenAI API credits"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.toolThink",
+      "typeVersion": 1.1,
+      "position": [
+        1680,
+        272
+      ],
+      "id": "d1ad0b64-ad06-4cdd-aa5f-a7ea35312f2a",
+      "name": "Think"
+    },
+    {
+      "parameters": {
+        "tableId": "flowsentinel_classified_incidents",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "raw_incident_id",
+              "fieldValue": "={{ $json.raw_incident_id }}"
+            },
+            {
+              "fieldId": "incident_key",
+              "fieldValue": "={{ $json.incident_key }}"
+            },
+            {
+              "fieldId": "source",
+              "fieldValue": "={{ $json.source }}"
+            },
+            {
+              "fieldId": "workflow_name",
+              "fieldValue": "={{ $json.workflow_name }}"
+            },
+            {
+              "fieldId": "workflow_id",
+              "fieldValue": "={{ $json.workflow_id }}"
+            },
+            {
+              "fieldId": "execution_id",
+              "fieldValue": "={{ $json.execution_id }}"
+            },
+            {
+              "fieldId": "execution_url",
+              "fieldValue": "={{ $json.execution_url }}"
+            },
+            {
+              "fieldId": "node_name",
+              "fieldValue": "={{ $json.node_name }}"
+            },
+            {
+              "fieldId": "node_type",
+              "fieldValue": "={{ $json.node_type }}"
+            },
+            {
+              "fieldId": "error_type",
+              "fieldValue": "={{ $json.error_type }}"
+            },
+            {
+              "fieldId": "error_message",
+              "fieldValue": "={{ $json.error_message }}"
+            },
+            {
+              "fieldId": "error_description",
+              "fieldValue": "={{ $json.error_description }}"
+            },
+            {
+              "fieldId": "status_code",
+              "fieldValue": "={{ $json.status_code }}"
+            },
+            {
+              "fieldId": "endpoint",
+              "fieldValue": "={{ $json.endpoint }}"
+            },
+            {
+              "fieldId": "method",
+              "fieldValue": "={{ $json.method }}"
+            },
+            {
+              "fieldId": "classification_source",
+              "fieldValue": "={{ $json.classification_source }}"
+            },
+            {
+              "fieldId": "classification_status",
+              "fieldValue": "={{ $json.classification_status }}"
+            },
+            {
+              "fieldId": "failure_category",
+              "fieldValue": "={{ $json.failure_category }}"
+            },
+            {
+              "fieldId": "severity",
+              "fieldValue": "={{ $json.severity }}"
+            },
+            {
+              "fieldId": "risk_level",
+              "fieldValue": "={{ $json.risk_level }}"
+            },
+            {
+              "fieldId": "retryable",
+              "fieldValue": "={{ $json.retryable }}"
+            },
+            {
+              "fieldId": "safe_to_auto_retry",
+              "fieldValue": "={{ $json.safe_to_auto_retry }}"
+            },
+            {
+              "fieldId": "escalate",
+              "fieldValue": "={{ $json.escalate }}"
+            },
+            {
+              "fieldId": "escalation_target",
+              "fieldValue": "={{ $json.escalation_target }}"
+            },
+            {
+              "fieldId": "requires_human_review",
+              "fieldValue": "={{ $json.requires_human_review }}"
+            },
+            {
+              "fieldId": "confidence",
+              "fieldValue": "={{ $json.confidence }}"
+            },
+            {
+              "fieldId": "human_summary",
+              "fieldValue": "={{ $json.human_summary }}"
+            },
+            {
+              "fieldId": "technical_reasoning",
+              "fieldValue": "={{ $json.technical_reasoning }}"
+            },
+            {
+              "fieldId": "recommended_action",
+              "fieldValue": "={{ $json.recommended_action }}"
+            },
+            {
+              "fieldId": "signals_used",
+              "fieldValue": "={{ $json.signals_used }}"
+            },
+            {
+              "fieldId": "signals_used",
+              "fieldValue": "={{ $json.signals_used }}"
+            },
+            {
+              "fieldId": "missing_context",
+              "fieldValue": "={{ $json.missing_context }}"
+            },
+            {
+              "fieldId": "tags",
+              "fieldValue": "={{ $json.tags }}"
+            },
+            {
+              "fieldId": "deterministic_result",
+              "fieldValue": "={{ $json.deterministic_result }}"
+            },
+            {
+              "fieldId": "ai_result",
+              "fieldValue": "={{ $json.ai_result }}"
+            },
+            {
+              "fieldId": "full_incident",
+              "fieldValue": "={{ $json.full_incident }}"
+            },
+            {
+              "fieldId": "created_from_path",
+              "fieldValue": "={{ $json.created_from_path }}"
+            },
+            {
+              "fieldId": "save_status",
+              "fieldValue": "={{ $json.save_status }}"
+            },
+            {
+              "fieldId": "notification_target",
+              "fieldValue": "={{ $json.full_incident.deterministic_result.notification_target }}"
+            },
+            {
+              "fieldId": "requires_email_notification",
+              "fieldValue": "={{ $json.full_incident.deterministic_result.requires_email_notification }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2256,
+        0
+      ],
+      "id": "742e1908-0705-4ca2-b32a-820e2fc50455",
+      "name": "Insert classification",
+      "credentials": {
+        "supabaseApi": {
+          "id": "mOlfzFw5DzW4gfJE",
+          "name": "Reliability Engine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "9901d405-6a1c-40b1-b958-f0bd3c39b9be",
+              "leftValue": "={{ $json.escalate }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2464,
+        0
+      ],
+      "id": "72d30a7b-75dd-4ae2-8e51-82862d7704e8",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.full_incident.ownership.main_dev_email }}",
+        "subject": "=[FlowSentinel][{{ $json.severity.toUpperCase() }}] {{ $json.failure_category }} in {{ $json.workflow_name }}",
+        "message": "=FlowSentinel detected a workflow incident requiring attention.\n\n━━━━━━━━━━━━━━━━━━\nINCIDENT SUMMARY\n━━━━━━━━━━━━━━━━━━\n\nWorkflow:\n{{ $json.workflow_name }}\n\nEnvironment:\n{{ $json.environment }}\n\nExecution ID:\n{{ $json.execution_id }}\n\nFailed Node:\n{{ $json.node_name }}\n\nClassification Source:\n{{ $json.classification_source }}\n\nFailure Category:\n{{ $json.failure_category }}\n\nSeverity:\n{{ $json.severity }}\n\nRisk Level:\n{{ $json.risk_level }}\n\nRetryable:\n{{ $json.retryable }}\n\nEscalation Target:\n{{ $json.escalation_target }}\n\n━━━━━━━━━━━━━━━━━━\nERROR DETAILS\n━━━━━━━━━━━━━━━━━━\n\nError Type:\n{{ $json.error_type }}\n\nStatus Code:\n{{ $json.status_code }}\n\nMethod:\n{{ $json.method }}\n\nEndpoint:\n{{ $json.endpoint }}\n\nMessage:\n{{ $json.error_message }}\n\nDescription:\n{{ $json.error_description }}\n\n━━━━━━━━━━━━━━━━━━\nAI / DETERMINISTIC ANALYSIS\n━━━━━━━━━━━━━━━━━━\n\nSummary:\n{{ $json.human_summary }}\n\nTechnical Reasoning:\n{{ $json.technical_reasoning }}\n\nRecommended Action:\n{{ $json.recommended_action }}\n\n━━━━━━━━━━━━━━━━━━\nEXECUTION LINK\n━━━━━━━━━━━━━━━━━━\n\n{{ $json.execution_url }}\n\n━━━━━━━━━━━━━━━━━━\nFLOWSENTINEL METADATA\n━━━━━━━━━━━━━━━━━━\n\nIncident Key:\n{{ $json.incident_key }}\n\nConfidence:\n{{ $json.confidence }}\n\nClassification Status:\n{{ $json.classification_status }}\n\nGenerated By:\nFlowSentinel V1",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        3072,
+        144
+      ],
+      "id": "69efc564-38e0-4b3b-9f5f-78e2fae08fbe",
+      "name": "Send a message1",
+      "webhookId": "9de09893-a1f5-4e49-9080-7034577217c5",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "OATrFaVcdHb2kzWD",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.escalation_target }}",
+                    "rightValue": "=workflow_owner",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "8f4f8439-feef-4ef7-8026-1d62cec88b13"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "2fa51844-9a5c-43c4-a047-3fee2fa6698d",
+                    "leftValue": "={{ $json.escalation_target }}",
+                    "rightValue": "main_dev_email",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        2720,
+        -16
+      ],
+      "id": "f3941ff3-715b-439e-aca7-05f8820d26cf",
+      "name": "Which escalation target?"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.full_incident.ownership.workflow_owner_email }}",
+        "subject": "=[FlowSentinel][{{ $json.severity.toUpperCase() }}] {{ $json.failure_category }} in {{ $json.workflow_name }}",
+        "message": "=<div style=\"font-family: Arial, sans-serif; color: #222; line-height: 1.6; max-width: 760px;\">\n\n  <p>FlowSentinel detected a workflow incident requiring attention.</p>\n\n  <div style=\"margin-top: 24px;\">\n    <h3 style=\"margin-bottom: 12px;\">━━━━━━━━━━━━━━━━━━<br>INCIDENT SUMMARY<br>━━━━━━━━━━━━━━━━━━</h3>\n    <p><strong>Workflow:</strong><br>{{$json.workflow_name}}</p>\n    <p><strong>Environment:</strong><br>{{$json.environment}}</p>\n    <p><strong>Execution ID:</strong><br>{{$json.execution_id}}</p>\n    <p><strong>Failed Node:</strong><br>{{$json.node_name}}</p>\n    <p><strong>Classification Source:</strong><br>{{$json.classification_source}}</p>\n    <p><strong>Failure Category:</strong><br>{{$json.failure_category}}</p>\n    <p><strong>Severity:</strong><br>{{$json.severity}}</p>\n    <p><strong>Risk Level:</strong><br>{{$json.risk_level}}</p>\n    <p><strong>Retryable:</strong><br>{{$json.retryable}}</p>\n    <p><strong>Escalation Target:</strong><br>{{$json.escalation_target}}</p>\n  </div>\n\n  <div style=\"margin-top: 32px;\">\n    <h3 style=\"margin-bottom: 12px;\">━━━━━━━━━━━━━━━━━━<br>ERROR DETAILS<br>━━━━━━━━━━━━━━━━━━</h3>\n    <p><strong>Error Type:</strong><br>{{$json.error_type}}</p>\n    <p><strong>Status Code:</strong><br>{{$json.status_code}}</p>\n    <p><strong>Method:</strong><br>{{$json.method}}</p>\n    <p><strong>Endpoint:</strong><br>{{$json.endpoint}}</p>\n    <p><strong>Message:</strong><br>{{$json.error_message}}</p>\n    <p><strong>Description:</strong><br>{{$json.error_description}}</p>\n  </div>\n\n  <div style=\"margin-top: 32px;\">\n    <h3 style=\"margin-bottom: 12px;\">━━━━━━━━━━━━━━━━━━<br>AI / DETERMINISTIC ANALYSIS<br>━━━━━━━━━━━━━━━━━━</h3>\n    <p><strong>Summary:</strong><br>{{$json.human_summary}}</p>\n    <p><strong>Technical Reasoning:</strong><br>{{$json.technical_reasoning}}</p>\n    <p><strong>Recommended Action:</strong><br>{{$json.recommended_action}}</p>\n  </div>\n\n  <div style=\"margin-top: 32px;\">\n    <h3 style=\"margin-bottom: 12px;\">━━━━━━━━━━━━━━━━━━<br>EXECUTION LINK<br>━━━━━━━━━━━━━━━━━━</h3>\n    <p><a href=\"{{$json.execution_url}}\">{{$json.execution_url}}</a></p>\n  </div>\n\n  <div style=\"margin-top: 32px;\">\n    <h3 style=\"margin-bottom: 12px;\">━━━━━━━━━━━━━━━━━━<br>FLOWSENTINEL METADATA<br>━━━━━━━━━━━━━━━━━━</h3>\n    <p><strong>Incident Key:</strong><br>\n    <span style=\"word-break: break-all;\">{{$json.incident_key}}</span></p>\n    <p><strong>Confidence:</strong><br>{{$json.confidence}}</p>\n    <p><strong>Classification Status:</strong><br>{{$json.classification_status}}</p>\n    <p><strong>Generated By:</strong><br>FlowSentinel V1</p>\n  </div>\n\n</div>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        3072,
+        -144
+      ],
+      "id": "16e7ad4f-f7a5-428e-b1d2-dcee9125fd01",
+      "name": "Owner",
+      "webhookId": "9de09893-a1f5-4e49-9080-7034577217c5",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "OATrFaVcdHb2kzWD",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2720,
+        176
+      ],
+      "id": "41012b0a-7351-4c10-8bff-721f025544f8",
+      "name": "No Operation, do nothing"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Save raw payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save raw payload": {
+      "main": [
+        [
+          {
+            "node": "Generate Incident Specs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Incident Specs": {
+      "main": [
+        [
+          {
+            "node": "Failed run?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Failed run?": {
+      "main": [
+        [
+          {
+            "node": "Deterministic checks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deterministic checks": {
+      "main": [
+        [
+          {
+            "node": "Needs AI classification?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs AI classification?": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Init classification to save in Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Init classification to save in Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Init classification to save in Supabase": {
+      "main": [
+        [
+          {
+            "node": "Insert classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Think": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert classification": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Which escalation target?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Which escalation target?": {
+      "main": [
+        [
+          {
+            "node": "Owner",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "ec37d101-57eb-439e-86c4-69ff696207f6",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "8a3b26d38a7d8ef458e6d9dfdc9b7bfca68055f14f2b8b9675f91a4384120ec5"
+  },
+  "id": "wPSmUm9Yj6QKsbqD",
+  "tags": []
+}
