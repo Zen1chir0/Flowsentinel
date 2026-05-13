@@ -1,488 +1,298 @@
 # FlowSentinel
 
-## AI-Assisted Reliability & Incident Classification Engine for n8n Workflows
+AI-assisted reliability and incident classification for n8n workflows.
 
 <p align="center">
-  <img src="./screenshots/workflow-architecture.png" alt="FlowSentinel Workflow Architecture" width="100%">
+  <img src="./screenshots/workflow-architecture.png" alt="FlowSentinel workflow architecture" width="100%">
 </p>
 
----
+FlowSentinel is an external observability layer for n8n automations. It captures failed workflow executions, stores the raw incident payload in Supabase, normalizes the failure into an operational incident, classifies it with deterministic rules first, and uses AI only when the rule layer cannot confidently identify the failure.
 
-# Table of Contents
+The guiding principle is simple:
 
-1. What is FlowSentinel?
-2. Problem It Solves
-3. Architecture Diagram
-4. Workflow Pipeline
-5. Deterministic vs AI Layer
-6. Incident Lifecycle
-7. Tech Stack
-8. Sample Incident Payload
-9. Database Structure
-10. Sample Incident Notification
-11. Future V2 Roadmap
-12. Screenshots
+> Reliability-critical decisions should be deterministic. AI should assist with ambiguous diagnosis, not silently control the incident pipeline.
 
----
+## Table of Contents
 
-# 1. What is FlowSentinel?
+- [Why FlowSentinel Exists](#why-flowsentinel-exists)
+- [Key Features](#key-features)
+- [Architecture](#architecture)
+- [Workflow Pipeline](#workflow-pipeline)
+- [Deterministic Classification](#deterministic-classification)
+- [AI Fallback](#ai-fallback)
+- [Incident Lifecycle](#incident-lifecycle)
+- [Data Model](#data-model)
+- [Sample Payload](#sample-payload)
+- [Sample Notification](#sample-notification)
+- [Tech Stack](#tech-stack)
+- [Project Files](#project-files)
+- [Roadmap](#roadmap)
+- [Screenshots](#screenshots)
 
-FlowSentinel is an AI-assisted reliability and incident classification engine designed for automation workflows built in n8n.
+## Why FlowSentinel Exists
 
-It acts as an external observability layer that monitors failed workflow executions, classifies incidents through deterministic logic with AI fallback analysis, persists operational telemetry into Supabase, and escalates actionable failures to workflow owners or main developers through automated notifications.
+Automation workflows often fail for ordinary but costly reasons:
 
-The project was designed around one core principle:
+- invalid API requests
+- expired credentials or OAuth tokens
+- malformed payloads
+- schema mismatches
+- rate limits
+- webhook delivery issues
+- unstable upstream services
+- orchestration logic errors
 
-> Deterministic systems should handle reliability-critical decisions, while AI should assist only when deterministic logic cannot confidently classify an incident.
+n8n provides execution logs and error triggers, but production teams often still need a separate layer for:
 
-FlowSentinel operates independently from the workflows it monitors, allowing it to function as an isolated reliability engine rather than a self-contained error handler embedded directly inside production automations.
+- centralized incident records
+- structured failure classification
+- retryability analysis
+- ownership-aware escalation
+- actionable notifications
+- audit-friendly operational history
 
----
+FlowSentinel turns raw workflow failures into structured incidents that can be classified, stored, routed, and reviewed.
 
-# 2. Problem It Solves
+## Key Features
 
-Modern automation workflows frequently fail due to:
+- Captures failed n8n executions through an Error Trigger
+- Persists raw incident payloads in Supabase for audit and replay
+- Normalizes inconsistent workflow errors into a common incident shape
+- Generates incident fingerprints for grouping and deduplication
+- Classifies known failures with deterministic operational rules
+- Uses OpenAI as a fallback for ambiguous or unknown failures
+- Determines severity, retryability, escalation need, and owner routing
+- Sends structured incident notifications to workflow owners or main developers
 
-* invalid API requests
-* expired credentials
-* malformed payloads
-* schema mismatches
-* rate limits
-* infrastructure instability
-* webhook delivery failures
-* inconsistent data shapes
-* orchestration logic errors
-
-Most low-code orchestration environments provide raw execution logs but lack:
-
-* centralized incident management
-* structured failure classification
-* escalation routing
-* retryability analysis
-* ownership-aware notifications
-* operational observability
-
-This creates several operational problems:
-
-## Operational Blind Spots
-
-Failures may occur silently without notifying the responsible developer.
-
-## Difficult Debugging
-
-Raw execution logs are often noisy, inconsistent, and difficult to analyze quickly.
-
-## Lack of Incident Prioritization
-
-Not every failure deserves escalation, but critical incidents should immediately notify developers.
-
-## AI Reliability Risks
-
-AI-generated automation pipelines can introduce ambiguous or unpredictable failures that require additional interpretation.
-
-FlowSentinel addresses these problems by converting raw workflow failures into structured operational incidents.
-
----
-
-# 3. Architecture Diagram
+## Architecture
 
 ```text
 Failing Workflow Environment
-        ↓
+        |
+        v
 n8n Error Trigger
-        ↓
+        |
+        v
 POST Request to FlowSentinel
-        ↓
+        |
+        v
 FlowSentinel Webhook Intake
-        ↓
+        |
+        v
 Raw Payload Persistence (Supabase)
-        ↓
+        |
+        v
 Incident Spec Generation
-        ↓
+        |
+        v
 Deterministic Classification Engine
-        ↓
-IF Deterministic Match Found
-    → Save Classified Incident
-    → Notify Responsible Owner
-
-ELSE
-    → AI Incident Classification
-    → Save Classified Incident
-    → Notify Responsible Owner
+        |
+        +-- Match found --> Save Classified Incident
+        |                  Notify Responsible Owner
+        |
+        +-- No match -----> AI Incident Classification
+                           Save Classified Incident
+                           Notify Responsible Owner
 ```
 
----
+![FlowSentinel architecture](./screenshots/flowsentinel-architecture.png)
 
-## Architecture Screenshot 
+## Workflow Pipeline
 
-![FlowSentinel Architecture](./screenshots/flowsentinel-architecture.png)
+### 1. Failed Workflow Execution
 
+A monitored n8n workflow fails in a separate workflow environment. Example failures include invalid endpoints, expired OAuth tokens, malformed JSON, failed HTTP requests, and missing required fields.
 
----
+### 2. Error Trigger Capture
 
-# 4. Workflow Pipeline
+The n8n Error Trigger captures the failed execution metadata and forwards it to FlowSentinel through an HTTP POST request.
 
-## Step 1 — Failed Workflow Execution
+The payload can include:
 
-A monitored workflow intentionally or unintentionally fails inside a separate n8n environment.
+- workflow metadata
+- execution metadata
+- failed node information
+- error details
+- environment
+- ownership metadata
 
-Example failures:
+### 3. Raw Payload Persistence
 
-* invalid endpoint
-* OAuth expiration
-* malformed JSON
-* failed HTTP requests
-* missing data fields
+FlowSentinel stores the original incoming payload in Supabase before classification.
 
----
+This preserves:
 
-## Step 2 — Error Trigger Capture
+- the original failure event
+- execution context
+- ownership metadata
+- incident audit history
+- future replay and debugging context
 
-The workflow’s Error Trigger captures the failed execution metadata and forwards it to FlowSentinel through an HTTP POST request.
+### 4. Incident Spec Generation
 
-Payload includes:
+The incident spec layer converts raw workflow errors into normalized operational incident objects.
 
-* workflow metadata
-* execution metadata
-* failed node information
-* error details
-* environment
-* ownership metadata
+It is responsible for:
 
----
+- standardizing inconsistent payload shapes
+- converting status codes into consistent values
+- normalizing workflow, node, and environment metadata
+- deriving a stable incident fingerprint
+- preparing deterministic classification inputs
+- preparing compact AI context for fallback reasoning
 
-## Step 3 — Raw Payload Persistence
+![Incident spec generation](./screenshots/incident-spec-generation.png)
 
-The incoming incident is persisted into a raw incident table inside Supabase.
+### 5. Deterministic Classification
 
-Purpose:
+The deterministic engine is the primary reliability layer. It handles known operational patterns such as HTTP errors, authentication failures, rate limits, validation issues, network instability, and schema mismatches.
 
-* preserve the original failure payload
-* provide auditability
-* support future replay/debugging
-* maintain historical incident records
+![Deterministic engine](./screenshots/deterministic-engine.png)
 
----
+### 6. AI Classification Fallback
 
-## Step 4 — Incident Spec Generation
+When deterministic rules cannot confidently classify an incident, FlowSentinel routes the normalized incident to the AI layer for contextual analysis.
 
-The “Generate Incident Specs” layer transforms raw workflow failures into normalized operational incident objects.
+![AI classification](./screenshots/ai-classification.png)
 
-This stage:
+### 7. Classified Incident Persistence
 
-* standardizes inconsistent failure payloads
-* derives structured incident metadata
-* generates incident fingerprints
-* prepares context for deterministic and AI classification
+The classified incident is stored in a structured Supabase table with the classification source, severity, retryability, routing decision, and recommended action.
 
-### Responsibilities of Incident Spec Generation
+### 8. Notification Routing
 
-#### Normalization
+If escalation is required, FlowSentinel determines the correct recipient and notification path.
 
-Converts raw workflow failures into a consistent schema.
+Targets can include:
 
-Example:
+- workflow owners
+- main developers
 
-* convert status codes into integers
-* standardize workflow metadata
-* normalize node information
-* clean inconsistent payload structures
+![Incident notification](./screenshots/incident-notification.png)
 
-#### Incident Fingerprinting
+## Deterministic Classification
 
-Generates a unique incident key using:
+The deterministic layer handles the cases that should be predictable, repeatable, and auditable.
 
-* workflow ID
-* node name
-* error type
-* status code
-* endpoint
-* error message
+It determines:
 
-This enables:
+- failure category
+- severity
+- retryability
+- escalation requirement
+- escalation target
+- recommended action
 
-* incident deduplication
-* future retry tracking
-* operational grouping
-
-#### Initial Classification Hints
-
-Provides lightweight pre-analysis:
-
-* likely retryability
-* initial failure category
-* environment context
-
-#### AI Context Preparation
-
-Creates structured contextual summaries optimized for downstream AI reasoning.
-
----
-
-## Incident Spec Generation Screenshot
-
-![Incident Spec Generation](./screenshots/incident-spec-generation.png)
-
-
----
-
-## Step 5 — Deterministic Classification Engine
-
-The deterministic engine acts as the primary reliability layer.
-
-Instead of relying on AI for all decisions, FlowSentinel first attempts to classify incidents through explicit rule-based operational logic.
-
-### Why Deterministic First?
-
-Operational reliability should remain:
-
-* predictable
-* explainable
-* auditable
-* consistent
-
-Deterministic rules are ideal for:
-
-* known HTTP status codes
-* authentication failures
-* rate limits
-* malformed payloads
-* network failures
-* schema mismatches
-* validation issues
-
-### Deterministic Classification Responsibilities
-
-The engine determines:
-
-* failure category
-* severity
-* retryability
-* escalation necessity
-* escalation target
-* recommended action
-
-### Example Rules
-
-#### 404
+Example rules:
 
 ```text
+Status: 404
 Category: not_found
 Retryable: false
 Escalate: true
 Target: workflow_owner
 ```
 
-#### 429
-
 ```text
+Status: 429
 Category: rate_limit
 Retryable: true
 Escalate: false
 ```
 
-#### Credential Errors
-
 ```text
+Pattern: credential or OAuth failure
 Category: credential_or_oauth_error
 Severity: high
+Retryable: false
 Escalate: true
 Target: main_devs
 ```
 
-### Escalation Guardrails
+The deterministic layer can also apply escalation guardrails such as environment checks, critical keyword detection, ownership-aware routing, and notification path generation.
 
-The deterministic layer also applies:
+## AI Fallback
 
-* environment-aware escalation
-* critical keyword detection
-* ownership-aware routing
-* notification path generation
+AI is used only after deterministic classification fails to produce a confident result.
 
----
+The AI layer helps with:
 
-## Deterministic Engine Screenshot
+- ambiguous error messages
+- unstructured failure details
+- inferred operational causes
+- severity estimation
+- remediation suggestions
+- unknown failure patterns
 
-![Deterministic Engine](./screenshots/deterministic-engine.png)
+This keeps AI useful without making it the authority for reliability-sensitive decisions.
 
-
----
-
-## Step 6 — AI Classification Fallback
-
-If deterministic rules cannot confidently classify an incident, the incident is routed into the AI classification layer.
-
-The AI layer:
-
-* analyzes ambiguous failures
-* infers likely operational causes
-* estimates severity
-* proposes remediation steps
-* determines escalation needs
-
-AI is intentionally used as:
-
-> an operational reasoning fallback layer
-
-rather than the primary reliability engine.
-
----
-
-## AI Classification Screenshot 
-
-![AI Classification](./screenshots/ai-classification.png)
-
-
----
-
-## Step 7 — Classified Incident Persistence
-
-Classified incidents are persisted into a second structured Supabase table.
-
-Stored data includes:
-
-* classification source
-* failure category
-* retryability
-* escalation routing
-* AI reasoning
-* operational metadata
-* incident relationships
-
----
-
-## Step 8 — Notification Routing
-
-If escalation is required, FlowSentinel automatically determines:
-
-* who should receive the alert
-* whether email notification is necessary
-* which escalation path should execute
-
-Targets include:
-
-* workflow owners
-* main developers
-
----
-
-## Email Notification Screenshot 
-
-![Incident Notification](./screenshots/incident-notification.png)
-
-
----
-
-# 5. Deterministic vs AI Layer
-
-One of the central architectural principles behind FlowSentinel is the separation between deterministic operational logic and AI reasoning.
-
-## Deterministic Layer
-
-Used for:
-
-* exact operational rules
-* known error patterns
-* retry safety decisions
-* escalation routing
-* predictable classifications
-
-Advantages:
-
-* reliable
-* auditable
-* repeatable
-* low hallucination risk
-
----
-
-## AI Layer
-
-Used only when deterministic logic cannot confidently classify an incident.
-
-Used for:
-
-* ambiguous failures
-* unstructured error reasoning
-* inferred operational diagnosis
-* contextual remediation suggestions
-
-Advantages:
-
-* flexible
-* adaptive
-* capable of handling unknown failure patterns
-
-This separation prevents AI from directly controlling operationally sensitive workflow decisions.
-
----
-
-# 6. Incident Lifecycle
+## Incident Lifecycle
 
 ```text
 Workflow Failure
-    ↓
+    |
+    v
 Error Trigger Capture
-    ↓
+    |
+    v
 Payload Ingestion
-    ↓
+    |
+    v
 Raw Incident Storage
-    ↓
+    |
+    v
 Incident Spec Generation
-    ↓
+    |
+    v
 Deterministic Classification
-    ↓
-AI Fallback (if necessary)
-    ↓
+    |
+    v
+AI Fallback, if needed
+    |
+    v
 Classified Incident Storage
-    ↓
+    |
+    v
 Escalation Routing
-    ↓
+    |
+    v
 Email Notification
 ```
 
----
+## Data Model
 
-# 7. Tech Stack
+FlowSentinel separates raw ingestion from classified incidents.
 
-## Core Technologies
+### Raw Incidents
 
-* n8n
-* Supabase
-* OpenAI API
-* JavaScript
-* PostgreSQL
+The raw incident table stores:
 
-## Key Components
+- original payload
+- workflow metadata
+- execution metadata
+- ownership metadata
+- incident fingerprint
+- ingestion timestamp
 
-### n8n
+This table supports auditing, debugging, and future replay.
 
-Handles:
+### Classified Incidents
 
-* workflow orchestration
-* webhook ingestion
-* routing
-* notification handling
+The classified incident table stores:
 
-### Supabase
+- classification source
+- failure category
+- severity
+- retryability
+- escalation decision
+- escalation target
+- recommended action
+- AI reasoning, when applicable
+- notification metadata
 
-Handles:
+This table supports operational tracking, incident review, and future analytics.
 
-* incident persistence
-* structured operational storage
-* classified incident management
-
-### OpenAI
-
-Handles:
-
-* AI fallback classification
-* contextual incident analysis
-* remediation suggestions
-
----
-
-# 8. Sample Incident Payload
+## Sample Payload
 
 ```json
 {
@@ -500,58 +310,11 @@ Handles:
 }
 ```
 
----
-
-# 9. Database Structure
-
-## Raw Incident Table
-
-Stores:
-
-* raw payloads
-* execution metadata
-* ownership metadata
-* incident fingerprints
-
-Purpose:
-
-* auditing
-* replayability
-* debugging
-* historical records
-
----
-
-## Classified Incident Table
-
-Stores:
-
-* deterministic classifications
-* AI classifications
-* retryability
-* escalation routing
-* operational severity
-* notification metadata
-
-Purpose:
-
-* operational observability
-* incident tracking
-* escalation handling
-* analytics
-
----
-
-# 10. Sample Incident Notification
-
-## Subject
-
-
-[FlowSentinel][HIGH] authentication_error in HubSpot Lead Sync
-
-## Body
+## Sample Notification
 
 ```text
+Subject: [FlowSentinel][HIGH] authentication_error in HubSpot Lead Sync
+
 FlowSentinel detected a workflow incident requiring attention.
 
 Workflow: HubSpot Lead Sync
@@ -563,108 +326,68 @@ Recommended Action:
 Check expired credentials, API keys, OAuth scopes, and token refresh handling.
 ```
 
----
+## Tech Stack
 
-# 11. Future Improvements Roadmap
+- n8n for workflow orchestration, error capture, routing, and notifications
+- Supabase for raw and classified incident persistence
+- PostgreSQL for structured incident storage
+- OpenAI API for fallback incident analysis
+- JavaScript for workflow-level transformation and classification logic
 
-Planned future improvements include:
+## Project Files
 
-## Retry Orchestration
+```text
+.
++-- Flowsentinel.json
++-- README.md
++-- screenshots/
+```
 
-Intelligent retry handling with retry-state awareness.
+`Flowsentinel.json` contains the exported n8n workflow. To inspect or run the workflow, import it into an n8n instance and configure the required Supabase, OpenAI, and notification credentials.
 
----
+## Roadmap
 
-## Incident Deduplication
+Planned improvements:
 
-Automatic grouping of repeated operational failures.
+- retry orchestration with retry-state awareness
+- incident deduplication and grouping
+- workflow ownership registry
+- Slack and Discord alerting
+- incident analytics dashboard
+- replay-safe recovery workflows
+- state tracking across failures and retries
+- adaptive retry policies based on incident history
 
----
+## Screenshots
 
-## Workflow Registry
+### Workflow Architecture
 
-Centralized workflow ownership and escalation management.
+![Workflow architecture](./screenshots/workflow-architecture.png)
 
----
-
-## Slack / Discord Integrations
-
-Multi-channel operational alerting.
-
----
-
-## Incident Analytics Dashboard
-
-Operational metrics and workflow health visualization.
-
----
-
-## Replay-Safe Recovery
-
-Exploration of partial execution recovery and replay safety.
-
----
-
-## State Persistence
-
-Tracking workflow state transitions across failures and retries.
-
----
-
-## Retry Intelligence
-
-Adaptive retry policies based on:
-
-* incident category
-* severity
-* operational risk
-* historical reliability patterns
-
----
-
-# 12. Screenshots
-
-## Workflow Architecture
-
-![Workflow Architecture](./screenshots/workflow-architecture.png)
-
-
----
-
-## Flowchart
+### Flowchart
 
 ![Flowchart](./screenshots/flowchart.png)
 
----
+### Deterministic Checks
 
-## Deterministic Checks
+![Deterministic checks](./screenshots/deterministic-checks.png)
 
-![Deterministic Checks](./screenshots/deterministic-checks.png)
+### AI Classification
 
+![AI classification](./screenshots/ai-classification.png)
 
----
+### Incident Email
 
-## AI Classification
+![Incident email](./screenshots/incident-email.png)
 
-![AI Classification](./screenshots/ai-classification.png)
+![Incident email 2](./screenshots/incident-email2.png)
 
+## Summary
 
----
+FlowSentinel demonstrates a reliability pattern for AI-assisted automation systems:
 
-## Incident Email
-
-![Incident Email](./screenshots/incident-email.png)
-![Incident Email 2](./screenshots/incident-email2.png)
-
----
-
-# Conclusion
-
-FlowSentinel demonstrates an approach to automation reliability where:
-
-* deterministic operational logic remains authoritative
-* AI serves as a controlled reasoning fallback
-* workflow failures become structured operational incidents
-* ownership-aware escalation improves observability and response time
-
-The project focuses on operational reliability, incident intelligence, and workflow observability for AI-assisted automation systems.
+- deterministic logic remains authoritative
+- AI is constrained to fallback reasoning
+- workflow failures become structured operational incidents
+- ownership-aware escalation improves response time
+- raw and classified incident records support observability and auditability
